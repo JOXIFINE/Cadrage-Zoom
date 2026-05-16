@@ -9,26 +9,32 @@
 <style>
 
 html, body {
+
     margin: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
 
-    /* fond blanc */
     background: white;
 
     touch-action: none;
+
     font-family: Arial, sans-serif;
 }
 
 #viewer {
+
     position: relative;
+
     width: 100vw;
     height: 100vh;
+
     overflow: hidden;
 }
 
-#image {
+/* DOUBLE BUFFER ultra fluide */
+
+.zoom-image {
 
     position: absolute;
 
@@ -39,23 +45,33 @@ html, body {
 
     transform-origin: center center;
 
-    will-change: transform;
+    will-change: transform, opacity;
 
     user-select: none;
     -webkit-user-drag: none;
     pointer-events: none;
 
-    /* zoom beaucoup plus fluide */
-    transition: transform 0.04s linear;
+    backface-visibility: hidden;
+
+    transition:
+        opacity 0.18s ease;
 }
 
-/* HUD zoom */
+.hidden {
+    opacity: 0;
+}
+
+.visible {
+    opacity: 1;
+}
+
+/* HUD */
 
 #zoom-meter {
 
     position: absolute;
 
-    bottom: 20px;
+    top: 20px;
     right: 20px;
 
     padding: 12px 14px;
@@ -71,6 +87,7 @@ html, body {
     color: black;
 
     font-size: 14px;
+
     letter-spacing: 0.3px;
 
     z-index: 100;
@@ -80,7 +97,7 @@ html, body {
 
 #zoom-bar {
 
-    width: 150px;
+    width: 160px;
     height: 6px;
 
     background: rgba(0,0,0,0.08);
@@ -100,8 +117,6 @@ html, body {
     background: black;
 
     border-radius: 999px;
-
-    transition: width 0.05s linear;
 }
 
 </style>
@@ -111,8 +126,17 @@ html, body {
 
 <div id="viewer">
 
-    <img id="image" src="1.webp" draggable="false">
+    <!-- double image -->
+    <img id="imgA"
+         class="zoom-image visible"
+         src="1.webp"
+         draggable="false">
 
+    <img id="imgB"
+         class="zoom-image hidden"
+         draggable="false">
+
+    <!-- HUD -->
     <div id="zoom-meter">
 
         <div id="zoom-text">
@@ -129,10 +153,9 @@ html, body {
 
 <script>
 
-const image = document.getElementById("image");
-
-const zoomText = document.getElementById("zoom-text");
-const zoomFill = document.getElementById("zoom-fill");
+/* ------------------- */
+/* CONFIG */
+/* ------------------- */
 
 const images = [
     "1.webp",
@@ -140,25 +163,61 @@ const images = [
     "3.webp"
 ];
 
-let current = 0;
-
-/* zoom actuel */
-let scale = 1;
-
-/* zoom cible pour fluidité */
-let targetScale = 1;
-
-const MAX_ZOOM = 16;
+const MAX_ZOOM = 22;
 const MIN_ZOOM = 1;
 
-/* Animation ultra fluide */
+/* ------------------- */
+/* PRELOAD TOTAL */
+/* ------------------- */
+
+images.forEach(src => {
+
+    const preload = new Image();
+    preload.src = src;
+
+});
+
+/* ------------------- */
+/* ELEMENTS */
+/* ------------------- */
+
+const imgA = document.getElementById("imgA");
+const imgB = document.getElementById("imgB");
+
+const zoomText =
+    document.getElementById("zoom-text");
+
+const zoomFill =
+    document.getElementById("zoom-fill");
+
+let activeImg = imgA;
+let nextImg = imgB;
+
+/* ------------------- */
+/* STATE */
+/* ------------------- */
+
+let current = 0;
+
+let scale = 1;
+let targetScale = 1;
+
+let transitioning = false;
+
+/* ------------------- */
+/* LOOP */
+/* ------------------- */
 
 function animate() {
 
-    /* interpolation smooth */
-    scale += (targetScale - scale) * 0.08;
+    /* interpolation très fluide */
 
-    image.style.transform = `scale(${scale})`;
+    scale += (targetScale - scale) * 0.045;
+
+    activeImg.style.transform =
+        `scale(${scale})`;
+
+    /* HUD */
 
     zoomText.innerText =
         `Zoom ×${scale.toFixed(2)}`;
@@ -170,37 +229,83 @@ function animate() {
     zoomFill.style.width =
         `${Math.min(progress, 100)}%`;
 
-    /* passage image suivante */
+    /* transition image */
 
-    if (scale >= MAX_ZOOM - 0.1) {
+    if (
+        scale >= MAX_ZOOM &&
+        !transitioning
+    ) {
 
-        current =
-            (current + 1) % images.length;
-
-        image.src = images[current];
-
-        scale = 1;
-        targetScale = 1;
+        transitionToNext();
     }
 
     requestAnimationFrame(animate);
 }
 
-animate();
+requestAnimationFrame(animate);
 
-/* Zoom molette desktop */
+/* ------------------- */
+/* TRANSITION */
+/* ------------------- */
+
+function transitionToNext() {
+
+    transitioning = true;
+
+    current =
+        (current + 1) % images.length;
+
+    /* image suivante préchargée */
+
+    nextImg.src = images[current];
+
+    /* reset scale */
+
+    scale = 1;
+    targetScale = 1;
+
+    nextImg.style.transform =
+        `scale(1)`;
+
+    /* crossfade */
+
+    nextImg.classList.remove("hidden");
+    nextImg.classList.add("visible");
+
+    activeImg.classList.remove("visible");
+    activeImg.classList.add("hidden");
+
+    /* swap */
+
+    const temp = activeImg;
+
+    activeImg = nextImg;
+    nextImg = temp;
+
+    setTimeout(() => {
+
+        transitioning = false;
+
+    }, 180);
+}
+
+/* ------------------- */
+/* DESKTOP */
+/* ------------------- */
 
 window.addEventListener("wheel", (e) => {
 
     e.preventDefault();
 
+    const zoomIntensity = 1.045;
+
     if (e.deltaY < 0) {
 
-        targetScale *= 1.08;
+        targetScale *= zoomIntensity;
 
     } else {
 
-        targetScale /= 1.08;
+        targetScale /= zoomIntensity;
     }
 
     targetScale =
@@ -208,7 +313,9 @@ window.addEventListener("wheel", (e) => {
 
 }, { passive: false });
 
-/* Pinch mobile */
+/* ------------------- */
+/* MOBILE PINCH */
+/* ------------------- */
 
 let lastDistance = null;
 
@@ -231,17 +338,17 @@ window.addEventListener("touchmove", (e) => {
 
         if (lastDistance) {
 
-            if (distance > lastDistance) {
+            const delta =
+                distance - lastDistance;
 
-                targetScale *= 1.025;
-
-            } else {
-
-                targetScale /= 1.025;
-            }
+            targetScale *=
+                1 + (delta * 0.0025);
 
             targetScale =
-                Math.max(MIN_ZOOM, targetScale);
+                Math.max(
+                    MIN_ZOOM,
+                    targetScale
+                );
         }
 
         lastDistance = distance;
